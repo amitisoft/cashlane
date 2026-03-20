@@ -1,0 +1,57 @@
+services:
+  db:
+    image: docker.io/library/postgres:16-alpine
+    container_name: cashlane-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cashlane}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - cashlane-db-data:/var/lib/postgresql/data
+      - ../backups:/backups
+
+  api:
+    build:
+      context: ../..
+      dockerfile: backend/Cashlane.Api/Dockerfile
+    container_name: cashlane-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=db;Port=5432;Database=${POSTGRES_DB:-cashlane};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:-postgres}
+      Jwt__Issuer: ${JWT_ISSUER:-cashlane-api}
+      Jwt__Audience: ${JWT_AUDIENCE:-cashlane-web}
+      Jwt__SigningKey: ${JWT_SIGNING_KEY}
+      Jwt__AccessTokenMinutes: ${JWT_ACCESS_TOKEN_MINUTES:-30}
+      Jwt__RefreshTokenDays: ${JWT_REFRESH_TOKEN_DAYS:-30}
+      Smtp__Host: ${SMTP_HOST}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__UseSsl: ${SMTP_USE_SSL:-true}
+      Smtp__Username: ${SMTP_USERNAME}
+      Smtp__Password: ${SMTP_PASSWORD}
+      Smtp__FromEmail: ${SMTP_FROM_EMAIL}
+      Smtp__FromName: ${SMTP_FROM_NAME:-Cashlane}
+      AppUrls__FrontendBaseUrl: http://localhost:8080
+      AppUrls__ResetPasswordPath: /
+      Demo__EnableDemoSeed: ${DEMO_ENABLE:-true}
+      Demo__DemoEmail: ${DEMO_EMAIL:-demo@cashlane.app}
+      Demo__DemoPassword: ${DEMO_PASSWORD:-Cashlane123}
+      Demo__DemoDisplayName: ${DEMO_DISPLAY_NAME:-Cashlane Demo}
+    depends_on:
+      - db
+    ports:
+      - "9090:9090"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: frontend/Dockerfile
+    container_name: cashlane-web
+    depends_on:
+      - api
+    ports:
+      - "8080:8080"
+
+volumes:
+  cashlane-db-data:
