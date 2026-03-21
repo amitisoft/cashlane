@@ -2,7 +2,7 @@ bin/
 obj/
 node_modules/
 dist/
-.env
+.env.example
 .env.local
 frontend/node_modules/
 frontend/dist/
