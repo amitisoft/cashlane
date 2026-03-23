@@ -9,6 +9,7 @@ using Cashlane.Api.Features.Recurring;
 using Cashlane.Api.Features.Reports;
 using Cashlane.Api.Features.Settings;
 using Cashlane.Api.Features.Transactions;
+using Cashlane.Api.Configuration;
 using Cashlane.Api.Infrastructure.Authentication;
 using Cashlane.Api.Infrastructure.Email;
 using Cashlane.Api.Infrastructure.Logging;
@@ -35,14 +36,19 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddCashlaneCors(this IServiceCollection services)
+    public static IServiceCollection AddCashlaneCors(this IServiceCollection services, CorsOptions corsOptions)
     {
+        if (corsOptions.AllowedOrigins.Length == 0)
+        {
+            throw new InvalidOperationException("At least one frontend origin must be configured for CORS.");
+        }
+
         services.AddCors(options =>
         {
             options.AddPolicy("frontend", policy =>
             {
                 policy
-                    .WithOrigins("http://localhost:8080")
+                    .WithOrigins(corsOptions.AllowedOrigins)
                     .AllowAnyHeader()
                     .AllowAnyMethod();
             });

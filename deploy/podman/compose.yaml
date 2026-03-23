@@ -34,6 +34,7 @@ services:
       Smtp__FromName: ${SMTP_FROM_NAME:-Cashlane}
       AppUrls__FrontendBaseUrl: http://localhost:8080
       AppUrls__ResetPasswordPath: /
+      Cors__AllowedOrigins__0: http://localhost:8080
       Demo__EnableDemoSeed: ${DEMO_ENABLE:-true}
       Demo__DemoEmail: ${DEMO_EMAIL:-demo@cashlane.app}
       Demo__DemoPassword: ${DEMO_PASSWORD:-Cashlane123}

@@ -47,6 +47,14 @@ builder.Services
     .Bind(builder.Configuration.GetSection(AppUrlOptions.SectionName))
     .ValidateDataAnnotations();
 
+builder.Services
+    .AddOptions<CorsOptions>()
+    .Bind(builder.Configuration.GetSection(CorsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+var corsOptions = builder.Configuration.GetSection(CorsOptions.SectionName).Get<CorsOptions>() ?? new CorsOptions();
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection"));
@@ -76,7 +84,7 @@ builder.Services
 
 builder.Services.AddAuthorization();
 builder.Services.AddCashlaneRateLimiting();
-builder.Services.AddCashlaneCors();
+builder.Services.AddCashlaneCors(corsOptions);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddCashlaneFeatureServices();

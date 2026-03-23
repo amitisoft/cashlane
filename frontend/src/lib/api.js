@@ -1,4 +1,18 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+const API_BASE_URL = resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL);
+
+function resolveApiBaseUrl(configuredBaseUrl) {
+  if (!configuredBaseUrl) {
+    return "/api";
+  }
+
+  const trimmedBaseUrl = configuredBaseUrl.replace(/\/+$/, "");
+
+  if (/^https?:\/\//i.test(trimmedBaseUrl) && !trimmedBaseUrl.endsWith("/api")) {
+    return `${trimmedBaseUrl}/api`;
+  }
+
+  return trimmedBaseUrl || "/api";
+}
 
 function buildUrl(path, params) {
   const url = new URL(path, window.location.origin);
