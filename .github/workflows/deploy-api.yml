@@ -68,6 +68,5 @@ jobs:
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'cashlane-api'
-          slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
           package: ./publish
