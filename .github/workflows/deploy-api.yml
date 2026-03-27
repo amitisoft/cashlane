@@ -63,10 +63,42 @@ jobs:
             exit 1
           fi
 
+      - name: Create deployment package
+        run: |
+          cd publish
+          zip -r ../site.zip .
+
+      - name: Parse ZipDeploy publish profile
+        id: kudu-profile
+        shell: pwsh
+        env:
+          AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
+        run: |
+          [xml]$xml = $env:AZURE_WEBAPP_PUBLISH_PROFILE
+          $profile = $xml.publishData.publishProfile | Where-Object { $_.publishMethod -eq 'ZipDeploy' } | Select-Object -First 1
+
+          if (-not $profile) {
+            throw 'ZipDeploy publish profile not found.'
+          }
+
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "publish_url=$($profile.publishUrl)"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "username=$($profile.userName)"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "password=$($profile.userPWD)"
+
       - name: Deploy to Azure Web App
-        id: deploy-to-webapp
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'cashlane-api'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
-          package: ./publish
+        env:
+          ZIP_DEPLOY_PUBLISH_URL: ${{ steps.kudu-profile.outputs.publish_url }}
+          ZIP_DEPLOY_USERNAME: ${{ steps.kudu-profile.outputs.username }}
+          ZIP_DEPLOY_PASSWORD: ${{ steps.kudu-profile.outputs.password }}
+        run: |
+          status_code=$(curl --silent --show-error --output deploy-response.txt --write-out "%{http_code}" \
+            --user "$ZIP_DEPLOY_USERNAME:$ZIP_DEPLOY_PASSWORD" \
+            --header "Content-Type: application/zip" \
+            --data-binary "@site.zip" \
+            "https://$ZIP_DEPLOY_PUBLISH_URL/api/zipdeploy")
+
+          if [ "$status_code" != "200" ] && [ "$status_code" != "202" ]; then
+            cat deploy-response.txt
+            echo "ZipDeploy failed with HTTP $status_code."
+            exit 1
+          fi
