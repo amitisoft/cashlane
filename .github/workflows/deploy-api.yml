@@ -68,8 +68,7 @@ jobs:
           cd publish
           zip -r ../site.zip .
 
-      - name: Parse ZipDeploy publish profile
-        id: kudu-profile
+      - name: Deploy to Azure Web App
         shell: pwsh
         env:
           AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
@@ -81,24 +80,18 @@ jobs:
             throw 'ZipDeploy publish profile not found.'
           }
 
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "publish_url=$($profile.publishUrl)"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "username=$($profile.userName)"
-          Add-Content -Path $env:GITHUB_OUTPUT -Value "password=$($profile.userPWD)"
+          $pair = "{0}:{1}" -f $profile.userName, $profile.userPWD
+          $basic = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes($pair))
+          $headers = @{ Authorization = "Basic $basic" }
+          $response = Invoke-WebRequest `
+            -Uri ("https://{0}/api/zipdeploy" -f $profile.publishUrl) `
+            -Method Post `
+            -Headers $headers `
+            -InFile (Join-Path $PWD 'site.zip') `
+            -ContentType 'application/zip'
 
-      - name: Deploy to Azure Web App
-        env:
-          ZIP_DEPLOY_PUBLISH_URL: ${{ steps.kudu-profile.outputs.publish_url }}
-          ZIP_DEPLOY_USERNAME: ${{ steps.kudu-profile.outputs.username }}
-          ZIP_DEPLOY_PASSWORD: ${{ steps.kudu-profile.outputs.password }}
-        run: |
-          status_code=$(curl --silent --show-error --output deploy-response.txt --write-out "%{http_code}" \
-            --user "$ZIP_DEPLOY_USERNAME:$ZIP_DEPLOY_PASSWORD" \
-            --header "Content-Type: application/zip" \
-            --data-binary "@site.zip" \
-            "https://$ZIP_DEPLOY_PUBLISH_URL/api/zipdeploy")
+          $statusCode = [int]$response.StatusCode
 
-          if [ "$status_code" != "200" ] && [ "$status_code" != "202" ]; then
-            cat deploy-response.txt
-            echo "ZipDeploy failed with HTTP $status_code."
-            exit 1
-          fi
+          if ($statusCode -ne 200 -and $statusCode -ne 202) {
+            throw "ZipDeploy failed with HTTP $statusCode."
+          }
