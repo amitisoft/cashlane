@@ -45,7 +45,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write
       contents: read
 
     steps:
@@ -55,12 +54,14 @@ jobs:
           name: .net-app
           path: ./publish
 
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_98A179BA8ECE4D80AE613ED9D972C530 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_138716F0CD6F468BAF8C0730A005DA6A }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_DE6C46F57265427993F18159658251A1 }}
+      - name: Validate deployment configuration
+        env:
+          AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
+        run: |
+          if [ -z "$AZURE_WEBAPP_PUBLISH_PROFILE" ]; then
+            echo "Repository secret AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API is required."
+            exit 1
+          fi
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -68,4 +69,5 @@ jobs:
         with:
           app-name: 'cashlane-api'
           slot-name: 'Production'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
           package: ./publish

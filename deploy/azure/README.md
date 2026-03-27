@@ -72,7 +72,7 @@ Add these repository variables:
 
 Add these repository secrets:
 
-- `AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API`: App Service publish profile XML. The API workflow derives the App Service name from this file, so no separate web app name variable is required.
+- `AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API`: App Service publish profile XML used by the API workflow. No Azure service principal login secrets are required for this workflow.
 - `AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_POND_0041D9200`: Static Web Apps deployment token used by the generated frontend workflow
 
 Helpful CLI commands:
