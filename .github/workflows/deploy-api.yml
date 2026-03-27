@@ -18,15 +18,41 @@ jobs:
 
     steps:
       - name: Validate deployment configuration
+        id: deployment-config
+        env:
+          AZURE_WEBAPP_PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
         run: |
-          if [ -z "${{ vars.CASHLANE_AZURE_WEBAPP_NAME }}" ]; then
-            echo "Repository variable CASHLANE_AZURE_WEBAPP_NAME is required."
-            exit 1
-          fi
-          if [ -z "${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}" ]; then
+          if [ -z "$AZURE_WEBAPP_PUBLISH_PROFILE" ]; then
             echo "Repository secret AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API is required."
             exit 1
           fi
+
+          app_name="$(python - <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+publish_profile = os.environ["AZURE_WEBAPP_PUBLISH_PROFILE"]
+
+try:
+    root = ET.fromstring(publish_profile)
+except ET.ParseError as exc:
+    print(f"Invalid App Service publish profile XML: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+for profile in root.findall(".//publishProfile"):
+    app_name = profile.attrib.get("msdeploySite")
+    if app_name:
+        print(app_name)
+        break
+else:
+    print("Unable to determine App Service name from the publish profile.", file=sys.stderr)
+    sys.exit(1)
+PY
+)"
+
+          echo "app_name=$app_name" >> "$GITHUB_OUTPUT"
+          echo "Resolved Azure App Service name: $app_name"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,6 +71,6 @@ jobs:
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
-          app-name: ${{ vars.CASHLANE_AZURE_WEBAPP_NAME }}
+          app-name: ${{ steps.deployment-config.outputs.app_name }}
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API }}
           package: ${{ github.workspace }}/publish

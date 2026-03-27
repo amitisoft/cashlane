@@ -68,12 +68,11 @@ The repo now contains:
 
 Add these repository variables:
 
-- `CASHLANE_AZURE_WEBAPP_NAME`: the App Service name, for example `cashlane-prod-api`
 - `CASHLANE_API_BASE_URL`: the App Service base URL, for example `https://cashlane-prod-api.azurewebsites.net`
 
 Add these repository secrets:
 
-- `AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API`: App Service publish profile XML
+- `AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API`: App Service publish profile XML. The API workflow derives the App Service name from this file, so no separate web app name variable is required.
 - `AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_POND_0041D9200`: Static Web Apps deployment token used by the generated frontend workflow
 
 Helpful CLI commands:
