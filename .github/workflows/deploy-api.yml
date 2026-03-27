@@ -24,7 +24,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Cashlane.sln
+        run: dotnet restore Cashlane.Api/Cashlane.Api.csproj
         working-directory: ./backend
 
       - name: Build with dotnet
@@ -66,6 +66,6 @@ jobs:
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'track-my-money-api'
+          app-name: 'cashlane-api'
           slot-name: 'Production'
           package: ./publish
