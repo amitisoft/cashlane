@@ -59,10 +59,12 @@ This script sets:
 
 ## GitHub Actions Secrets And Variables
 
+Use the repository workflows for deployment rather than App Service Deployment Center. If the portal GitHub setup fails with a duplicate role assignment, the publish profile workflow below avoids that integration path entirely.
+
 The repo now contains:
 
 - `.github/workflows/deploy-api.yml`
-- `.github/workflows/deploy-frontend.yml`
+- `.github/workflows/azure-static-web-apps-agreeable-pond-0041d9200.yml`
 
 Add these repository variables:
 
@@ -72,7 +74,7 @@ Add these repository variables:
 Add these repository secrets:
 
 - `AZUREAPPSERVICE_PUBLISHPROFILE_CASHLANE_API`: App Service publish profile XML
-- `AZURE_STATIC_WEB_APPS_API_TOKEN_CASHLANE_FRONTEND`: Static Web Apps deployment token
+- `AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_POND_0041D9200`: Static Web Apps deployment token used by the generated frontend workflow
 
 Helpful CLI commands:
 
