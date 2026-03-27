@@ -44,12 +44,8 @@ export function QuickEntrySheet({ isOpen, onClose }) {
     }
 
     async function loadData() {
-      const [accountData, categoryData] = await Promise.all([
-        authorizedFetch("/accounts"),
-        authorizedFetch("/categories")
-      ]);
+      const accountData = await authorizedFetch("/accounts");
       setAccounts(accountData);
-      setCategories(categoryData.filter((item) => !item.isArchived));
       setForm((current) => ({
         ...emptyForm,
         ...preferences.lastByType[current.type],
@@ -62,6 +58,25 @@ export function QuickEntrySheet({ isOpen, onClose }) {
       pushToast({ kind: "danger", title: "Quick entry unavailable", message: error.message });
     });
   }, [authorizedFetch, isOpen, preferences.lastByType, pushToast]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    const selectedAccount = accounts.find((account) => account.id === form.accountId);
+    authorizedFetch("/categories", {
+      params: {
+        accountId: selectedAccount?.isShared ? selectedAccount.id : ""
+      }
+    })
+      .then((categoryData) => {
+        setCategories(categoryData.filter((item) => !item.isArchived));
+      })
+      .catch((error) => {
+        pushToast({ kind: "danger", title: "Quick entry unavailable", message: error.message });
+      });
+  }, [accounts, authorizedFetch, form.accountId, isOpen, pushToast]);
 
   const type = form.type.toLowerCase();
   const categoryOptions = useMemo(

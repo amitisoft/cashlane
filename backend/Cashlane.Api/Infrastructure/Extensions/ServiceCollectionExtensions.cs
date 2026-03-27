@@ -4,9 +4,12 @@ using Cashlane.Api.Features.Auth;
 using Cashlane.Api.Features.Budgets;
 using Cashlane.Api.Features.Categories;
 using Cashlane.Api.Features.Dashboard;
+using Cashlane.Api.Features.Forecast;
 using Cashlane.Api.Features.Goals;
+using Cashlane.Api.Features.Insights;
 using Cashlane.Api.Features.Recurring;
 using Cashlane.Api.Features.Reports;
+using Cashlane.Api.Features.Rules;
 using Cashlane.Api.Features.Settings;
 using Cashlane.Api.Features.Transactions;
 using Cashlane.Api.Configuration;
@@ -66,6 +69,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuditLogService, AuditLogService>();
         services.AddScoped<ITelemetryService, TelemetryService>();
+        services.AddScoped<IAccountAccessService, AccountAccessService>();
+        services.AddScoped<IAccountBalanceSnapshotService, AccountBalanceSnapshotService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IAccountService, AccountService>();
         services.AddScoped<ICategoryService, CategoryService>();
@@ -75,6 +80,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IRecurringService, RecurringService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IReportService, ReportService>();
+        services.AddScoped<IForecastService, ForecastService>();
+        services.AddScoped<IInsightsService, InsightsService>();
+        services.AddScoped<IRuleService, RuleService>();
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IDemoDataSeeder, DemoDataSeeder>();
 

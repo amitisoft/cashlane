@@ -89,6 +89,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddCashlaneFeatureServices();
 builder.Services.AddHostedService<RecurringTransactionWorker>();
+builder.Services.AddHostedService<AccountBalanceSnapshotWorker>();
 
 var app = builder.Build();
 
@@ -107,6 +108,7 @@ if (!app.Environment.IsDevelopment())
 
 app.UseCors("frontend");
 app.UseAuthentication();
+app.UseMiddleware<AccountAccessMiddleware>();
 app.UseAuthorization();
 app.UseRateLimiter();
 

@@ -1,3 +1,18 @@
+function getLinePoints(points, { width, height, padding, maxValue, valueKey }) {
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+
+  return points.map((point, index) => {
+    const x = padding.left + ((points.length === 1 ? 0.5 : index / Math.max(points.length - 1, 1)) * plotWidth);
+    const y = padding.top + (1 - point[valueKey] / maxValue) * plotHeight;
+    return { x, y };
+  });
+}
+
+function buildPath(points) {
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
+}
+
 export function DonutChart({ items }) {
   const total = items.reduce((sum, item) => sum + item.amount, 0);
   let offset = 0;
@@ -6,7 +21,7 @@ export function DonutChart({ items }) {
     <div className="chart-frame">
       <svg viewBox="0 0 120 120" className="donut-chart" aria-label="Spending by category">
         <circle cx="60" cy="60" r="42" className="donut-track" />
-        {items.map((item) => {
+        {items.map((item, index) => {
           const value = total > 0 ? item.amount / total : 0;
           const strokeDasharray = `${value * 264} 264`;
           const strokeDashoffset = -offset * 264;
@@ -14,7 +29,7 @@ export function DonutChart({ items }) {
 
           return (
             <circle
-              key={item.categoryId}
+              key={item.categoryId || item.label || index}
               cx="60"
               cy="60"
               r="42"
@@ -27,10 +42,10 @@ export function DonutChart({ items }) {
         })}
       </svg>
       <div className="chart-legend">
-        {items.map((item) => (
-          <div key={item.categoryId} className="chart-legend-item">
+        {items.map((item, index) => (
+          <div key={item.categoryId || item.label || index} className="chart-legend-item">
             <span className="legend-dot" style={{ background: item.color }} />
-            <span>{item.categoryName}</span>
+            <span>{item.categoryName || item.label}</span>
             <strong>{formatCurrency(item.amount)}</strong>
           </div>
         ))}
@@ -43,25 +58,10 @@ export function TrendChart({ points }) {
   const width = 720;
   const height = 260;
   const padding = { top: 20, right: 18, bottom: 24, left: 18 };
-  const plotWidth = width - padding.left - padding.right;
-  const plotHeight = height - padding.top - padding.bottom;
-  const maxValue = Math.max(
-    1,
-    ...points.flatMap((point) => [point.income, point.expense])
-  );
-  const getPointX = (index) =>
-    padding.left + ((points.length === 1 ? 0.5 : index / Math.max(points.length - 1, 1)) * plotWidth);
-
-  const buildPath = (field) =>
-    points
-      .map((point, index) => {
-        const x = getPointX(index);
-        const y = padding.top + (1 - point[field] / maxValue) * plotHeight;
-        return `${index === 0 ? "M" : "L"} ${x} ${y}`;
-      })
-      .join(" ");
-
-  const guideLines = Array.from({ length: 4 }, (_, index) => padding.top + (plotHeight / 3) * index);
+  const maxValue = Math.max(1, ...points.flatMap((point) => [point.income, point.expense]));
+  const guideLines = Array.from({ length: 4 }, (_, index) => padding.top + ((height - padding.top - padding.bottom) / 3) * index);
+  const incomePoints = getLinePoints(points, { width, height, padding, maxValue, valueKey: "income" });
+  const expensePoints = getLinePoints(points, { width, height, padding, maxValue, valueKey: "expense" });
 
   return (
     <div className="trend-frame">
@@ -76,26 +76,53 @@ export function TrendChart({ points }) {
             className="trend-grid-line"
           />
         ))}
-        <path d={buildPath("income")} className="trend-line income-line" />
-        <path d={buildPath("expense")} className="trend-line expense-line" />
-        {points.map((point, index) => {
-          const x = getPointX(index);
-          const incomeY = padding.top + (1 - point.income / maxValue) * plotHeight;
-          const expenseY = padding.top + (1 - point.expense / maxValue) * plotHeight;
-
-          return (
-            <g key={point.label}>
-              <circle cx={x} cy={incomeY} r="4.5" className="trend-point income-point" />
-              <circle cx={x} cy={expenseY} r="4.5" className="trend-point expense-point" />
-            </g>
-          );
-        })}
+        <path d={buildPath(incomePoints)} className="trend-line income-line" />
+        <path d={buildPath(expensePoints)} className="trend-line expense-line" />
+        {points.map((point, index) => (
+          <g key={point.label}>
+            <circle cx={incomePoints[index].x} cy={incomePoints[index].y} r="4.5" className="trend-point income-point" />
+            <circle cx={expensePoints[index].x} cy={expensePoints[index].y} r="4.5" className="trend-point expense-point" />
+          </g>
+        ))}
       </svg>
-      <div
-        className="trend-labels"
-        style={{ gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(0, 1fr))` }}
-      >
+      <div className="trend-labels" style={{ gridTemplateColumns: `repeat(${Math.max(points.length, 1)}, minmax(0, 1fr))` }}>
         {points.map((point) => (
+          <span key={point.label}>{point.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function SingleLineChart({ points, ariaLabel, color = "var(--accent-strong)" }) {
+  const normalized = points.map((point) => ({ label: point.label, value: point.value }));
+  const width = 720;
+  const height = 260;
+  const padding = { top: 20, right: 18, bottom: 24, left: 18 };
+  const maxValue = Math.max(1, ...normalized.map((point) => point.value));
+  const guideLines = Array.from({ length: 4 }, (_, index) => padding.top + ((height - padding.top - padding.bottom) / 3) * index);
+  const linePoints = getLinePoints(normalized, { width, height, padding, maxValue, valueKey: "value" });
+
+  return (
+    <div className="trend-frame">
+      <svg viewBox={`0 0 ${width} ${height}`} className="trend-chart" aria-label={ariaLabel}>
+        {guideLines.map((lineY) => (
+          <line
+            key={lineY}
+            x1={padding.left}
+            y1={lineY}
+            x2={width - padding.right}
+            y2={lineY}
+            className="trend-grid-line"
+          />
+        ))}
+        <path d={buildPath(linePoints)} className="trend-line" style={{ stroke: color }} />
+        {linePoints.map((point, index) => (
+          <circle key={`${normalized[index].label}-${index}`} cx={point.x} cy={point.y} r="4.5" className="trend-point" style={{ stroke: color }} />
+        ))}
+      </svg>
+      <div className="trend-labels" style={{ gridTemplateColumns: `repeat(${Math.max(normalized.length, 1)}, minmax(0, 1fr))` }}>
+        {normalized.map((point) => (
           <span key={point.label}>{point.label}</span>
         ))}
       </div>
@@ -107,10 +134,10 @@ export function BarsChart({ items }) {
   const max = Math.max(1, ...items.map((item) => item.amount));
   return (
     <div className="bars-chart">
-      {items.map((item) => (
-        <div key={item.categoryId} className="bar-row">
+      {items.map((item, index) => (
+        <div key={item.categoryId || item.label || index} className="bar-row">
           <div className="bar-label">
-            <span>{item.categoryName}</span>
+            <span>{item.categoryName || item.label}</span>
             <strong>{formatCurrency(item.amount)}</strong>
           </div>
           <div className="bar-track">

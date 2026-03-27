@@ -12,8 +12,11 @@ const navItems = [
   { to: "/budgets", label: "Budgets" },
   { to: "/goals", label: "Goals" },
   { to: "/reports", label: "Reports" },
+  { to: "/insights", label: "Insights" },
+  { to: "/rules", label: "Rules" },
   { to: "/recurring", label: "Recurring" },
   { to: "/accounts", label: "Accounts" },
+  { to: "/shared-accounts", label: "Shared" },
   { to: "/categories", label: "Categories" },
   { to: "/settings", label: "Settings" }
 ];

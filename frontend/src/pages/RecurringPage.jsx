@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SelectField } from "../components/SelectField";
 import { useAuth } from "../lib/auth";
 import { CATEGORY_TYPE_OPTIONS, RECURRING_FREQUENCY_OPTIONS } from "../lib/select-options";
@@ -27,33 +27,61 @@ export function RecurringPage() {
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState(emptyForm);
-  const accountOptions = [{ value: "", label: "Select account" }, ...accounts.map((account) => ({ value: account.id, label: account.name }))];
-  const categoryOptions = [
-    { value: "", label: "Select category" },
-    ...categories
-      .filter((item) => item.type === form.type)
-      .map((category) => ({ value: category.id, label: category.name }))
-  ];
+
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === form.accountId) || null,
+    [accounts, form.accountId]
+  );
 
   useEffect(() => {
-    Promise.all([authorizedFetch("/recurring"), authorizedFetch("/accounts"), authorizedFetch("/categories")])
-      .then(([itemData, accountData, categoryData]) => {
+    Promise.all([authorizedFetch("/recurring"), authorizedFetch("/accounts")])
+      .then(([itemData, accountData]) => {
         setItems(itemData);
         setAccounts(accountData);
-        setCategories(categoryData.filter((item) => !item.isArchived));
       })
       .catch((error) => {
         pushToast({ kind: "danger", title: "Recurring unavailable", message: error.message });
       });
   }, [authorizedFetch, pushToast]);
 
+  useEffect(() => {
+    authorizedFetch("/categories", { params: { accountId: selectedAccount?.isShared ? selectedAccount.id : "" } })
+      .then((categoryData) => {
+        setCategories(categoryData.filter((item) => !item.isArchived));
+      })
+      .catch((error) => {
+        pushToast({ kind: "danger", title: "Categories unavailable", message: error.message });
+      });
+  }, [authorizedFetch, form.accountId, pushToast, selectedAccount?.id, selectedAccount?.isShared]);
+
+  const accountOptions = [{ value: "", label: "Select account" }, ...accounts.map((account) => ({ value: account.id, label: account.name }))];
+  const categoryOptions = [
+    { value: "", label: "Select category" },
+    ...categories.filter((item) => item.type === form.type).map((category) => ({ value: category.id, label: category.name }))
+  ];
+
+  function toRequest(item) {
+    return {
+      title: item.title,
+      type: item.type,
+      amount: Number(item.amount),
+      categoryId: item.categoryId || null,
+      accountId: item.accountId || null,
+      frequency: item.frequency,
+      startDate: item.startDate,
+      endDate: item.endDate || null,
+      nextRunDate: item.nextRunDate,
+      autoCreateTransaction: item.autoCreateTransaction,
+      isPaused: item.isPaused
+    };
+  }
+
   async function handleSave(event) {
     event.preventDefault();
 
     try {
       const payload = {
-        ...form,
-        amount: Number(form.amount),
+        ...toRequest(form),
         endDate: form.endDate || null
       };
 
@@ -61,9 +89,7 @@ export function RecurringPage() {
         ? await authorizedFetch(`/recurring/${form.id}`, { method: "PUT", body: payload })
         : await authorizedFetch("/recurring", { method: "POST", body: payload });
 
-      setItems((current) =>
-        form.id ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]
-      );
+      setItems((current) => (form.id ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]));
       setForm(emptyForm);
       pushToast({
         kind: "success",
@@ -96,7 +122,7 @@ export function RecurringPage() {
     try {
       const updated = await authorizedFetch(`/recurring/${item.id}`, {
         method: "PUT",
-        body: { ...item, endDate: item.endDate || null, isPaused: !item.isPaused }
+        body: { ...toRequest(item), isPaused: !item.isPaused }
       });
       setItems((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
       if (form.id === item.id) {
@@ -141,20 +167,25 @@ export function RecurringPage() {
                 <div className="recurring-card-copy">
                   <strong>{item.title}</strong>
                   <span>
-                    {item.frequency} - {item.nextRunDate}
-                    {item.isPaused ? " - Paused" : ""}
+                    {item.frequency} · {item.nextRunDate}
+                    {item.accountName ? ` · ${item.accountName}` : ""}
+                    {item.isPaused ? " · Paused" : ""}
                   </span>
                 </div>
                 <strong className="recurring-card-amount">{formatCurrency(item.amount)}</strong>
               </div>
               <div className="inline-actions">
-                <button type="button" className="ghost-button" onClick={() => startEdit(item)}>
+                {item.isShared && <span className="pill pill-medium">Shared scope</span>}
+                {!item.canManage && <span className="pill">View only</span>}
+              </div>
+              <div className="inline-actions">
+                <button type="button" className="ghost-button" onClick={() => startEdit(item)} disabled={!item.canManage}>
                   Edit
                 </button>
-                <button type="button" className="ghost-button" onClick={() => handleTogglePause(item)}>
+                <button type="button" className="ghost-button" onClick={() => handleTogglePause(item)} disabled={!item.canManage}>
                   {item.isPaused ? "Resume" : "Pause"}
                 </button>
-                <button type="button" className="ghost-button" onClick={() => handleDelete(item.id)}>
+                <button type="button" className="ghost-button" onClick={() => handleDelete(item.id)} disabled={!item.canManage}>
                   Delete
                 </button>
               </div>
@@ -177,12 +208,7 @@ export function RecurringPage() {
           </label>
           <label className="field">
             <span>Type</span>
-            <SelectField
-              ariaLabel="Recurring transaction type"
-              options={CATEGORY_TYPE_OPTIONS}
-              value={form.type}
-              onChange={(nextValue) => setForm((current) => ({ ...current, type: nextValue }))}
-            />
+            <SelectField ariaLabel="Recurring transaction type" options={CATEGORY_TYPE_OPTIONS} value={form.type} onChange={(nextValue) => setForm((current) => ({ ...current, type: nextValue, categoryId: "" }))} />
           </label>
           <label className="field">
             <span>Amount</span>
@@ -190,30 +216,15 @@ export function RecurringPage() {
           </label>
           <label className="field">
             <span>Account</span>
-            <SelectField
-              ariaLabel="Recurring account"
-              options={accountOptions}
-              value={form.accountId}
-              onChange={(nextValue) => setForm((current) => ({ ...current, accountId: nextValue }))}
-            />
+            <SelectField ariaLabel="Recurring account" options={accountOptions} value={form.accountId} onChange={(nextValue) => setForm((current) => ({ ...current, accountId: nextValue, categoryId: "" }))} />
           </label>
           <label className="field">
             <span>Category</span>
-            <SelectField
-              ariaLabel="Recurring category"
-              options={categoryOptions}
-              value={form.categoryId}
-              onChange={(nextValue) => setForm((current) => ({ ...current, categoryId: nextValue }))}
-            />
+            <SelectField ariaLabel="Recurring category" options={categoryOptions} value={form.categoryId} onChange={(nextValue) => setForm((current) => ({ ...current, categoryId: nextValue }))} />
           </label>
           <label className="field">
             <span>Frequency</span>
-            <SelectField
-              ariaLabel="Recurring frequency"
-              options={RECURRING_FREQUENCY_OPTIONS}
-              value={form.frequency}
-              onChange={(nextValue) => setForm((current) => ({ ...current, frequency: nextValue }))}
-            />
+            <SelectField ariaLabel="Recurring frequency" options={RECURRING_FREQUENCY_OPTIONS} value={form.frequency} onChange={(nextValue) => setForm((current) => ({ ...current, frequency: nextValue }))} />
           </label>
           <label className="field">
             <span>Start date</span>
@@ -229,19 +240,11 @@ export function RecurringPage() {
           </label>
           <div className="recurring-form-options">
             <label className="field checkbox-field recurring-toggle">
-              <input
-                type="checkbox"
-                checked={form.autoCreateTransaction}
-                onChange={(event) => setForm((current) => ({ ...current, autoCreateTransaction: event.target.checked }))}
-              />
+              <input type="checkbox" checked={form.autoCreateTransaction} onChange={(event) => setForm((current) => ({ ...current, autoCreateTransaction: event.target.checked }))} />
               <span>Auto-create transactions</span>
             </label>
             <label className="field checkbox-field recurring-toggle">
-              <input
-                type="checkbox"
-                checked={form.isPaused}
-                onChange={(event) => setForm((current) => ({ ...current, isPaused: event.target.checked }))}
-              />
+              <input type="checkbox" checked={form.isPaused} onChange={(event) => setForm((current) => ({ ...current, isPaused: event.target.checked }))} />
               <span>Paused</span>
             </label>
           </div>

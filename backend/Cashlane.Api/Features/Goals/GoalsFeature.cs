@@ -18,10 +18,13 @@ public sealed record GoalDto(
     decimal CurrentAmount,
     DateOnly? TargetDate,
     Guid? LinkedAccountId,
+    string? LinkedAccountName,
     string Icon,
     string Color,
     GoalStatus Status,
-    int ProgressPercent);
+    int ProgressPercent,
+    bool IsShared,
+    bool CanManage);
 
 public sealed record SaveGoalRequest(string Name, decimal TargetAmount, DateOnly? TargetDate, Guid? LinkedAccountId, string Icon, string Color, GoalStatus Status);
 public sealed record GoalContributionRequest(decimal Amount, Guid? AccountId);
@@ -39,35 +42,41 @@ public sealed class GoalService(
     AppDbContext dbContext,
     ICurrentUserService currentUserService,
     IAuditLogService auditLogService,
-    ITelemetryService telemetryService) : UserScopedService(currentUserService), IGoalService
+    ITelemetryService telemetryService,
+    IAccountAccessService accountAccessService,
+    IAccountBalanceSnapshotService snapshotService) : UserScopedService(currentUserService), IGoalService
 {
     public async Task<IReadOnlyList<GoalDto>> GetGoalsAsync(CancellationToken cancellationToken = default)
     {
         var userId = GetRequiredUserId();
-        return await dbContext.Goals
-            .Where(x => x.UserId == userId)
+        var accessibleAccountIds = await accountAccessService.GetAccessibleAccountIdsAsync(AccountRole.Viewer, cancellationToken);
+        var roleMap = accessibleAccountIds.ToDictionary(x => x, _ => AccountRole.Viewer);
+        foreach (var accountId in accessibleAccountIds)
+        {
+            roleMap[accountId] = await accountAccessService.GetRoleAsync(accountId, cancellationToken) ?? AccountRole.Viewer;
+        }
+
+        var goals = await dbContext.Goals
+            .AsNoTracking()
+            .Include(x => x.LinkedAccount)
+            .Where(x => x.UserId == userId || (x.LinkedAccountId != null && accessibleAccountIds.Contains(x.LinkedAccountId.Value)))
             .OrderBy(x => x.TargetDate)
-            .Select(x => new GoalDto(
-                x.Id,
-                x.Name,
-                x.TargetAmount,
-                x.CurrentAmount,
-                x.TargetDate,
-                x.LinkedAccountId,
-                x.Icon,
-                x.Color,
-                x.Status,
-                x.TargetAmount <= 0 ? 0 : (int)Math.Round((x.CurrentAmount / x.TargetAmount) * 100, MidpointRounding.AwayFromZero)))
             .ToListAsync(cancellationToken);
+
+        return goals
+            .DistinctBy(x => x.Id)
+            .Select(x => x.ToDto(roleMap.GetValueOrDefault(x.LinkedAccountId ?? Guid.Empty, AccountRole.Owner), userId))
+            .ToList();
     }
 
     public async Task<GoalDto> CreateGoalAsync(SaveGoalRequest request, CancellationToken cancellationToken = default)
     {
         var userId = GetRequiredUserId();
         ValidateGoalRequest(request);
+        Account? linkedAccount = null;
         if (request.LinkedAccountId is not null)
         {
-            await EnsureAccountOwnershipAsync(request.LinkedAccountId.Value, userId, cancellationToken);
+            linkedAccount = await EnsureOwnedAccountAsync(request.LinkedAccountId.Value, cancellationToken);
         }
 
         var goal = new Goal
@@ -86,9 +95,10 @@ public sealed class GoalService(
         dbContext.Goals.Add(goal);
         await dbContext.SaveChangesAsync(cancellationToken);
         await telemetryService.TrackAsync("goal_created", userId, new { goal.Id }, cancellationToken);
-        await auditLogService.WriteAsync("goal.created", nameof(Goal), goal.Id, new { goal.Name }, cancellationToken);
+        await auditLogService.WriteAsync("goal.created", nameof(Goal), goal.Id, new { goal.Name }, cancellationToken, linkedAccount?.Id);
 
-        return goal.ToDto();
+        goal.LinkedAccount = linkedAccount;
+        return goal.ToDto(AccountRole.Owner, userId);
     }
 
     public async Task<GoalDto> UpdateGoalAsync(Guid id, SaveGoalRequest request, CancellationToken cancellationToken = default)
@@ -96,18 +106,21 @@ public sealed class GoalService(
         var userId = GetRequiredUserId();
         ValidateGoalRequest(request);
 
-        var goal = await dbContext.Goals.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken)
+        var goal = await dbContext.Goals
+            .Include(x => x.LinkedAccount)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
             ?? throw new AppException(HttpStatusCode.NotFound, "Goal not found", "Goal does not exist.");
 
-        if (request.LinkedAccountId is not null)
+        await EnsureManageGoalAsync(goal, cancellationToken);
+
+        if (goal.LinkedAccountId != request.LinkedAccountId)
         {
-            await EnsureAccountOwnershipAsync(request.LinkedAccountId.Value, userId, cancellationToken);
+            throw new AppException(HttpStatusCode.BadRequest, "Invalid goal", "Goal scope cannot be changed.");
         }
 
         goal.Name = request.Name.Trim();
         goal.TargetAmount = request.TargetAmount;
         goal.TargetDate = request.TargetDate;
-        goal.LinkedAccountId = request.LinkedAccountId;
         goal.Icon = request.Icon;
         goal.Color = request.Color;
         goal.Status = request.Status;
@@ -117,9 +130,9 @@ public sealed class GoalService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        await auditLogService.WriteAsync("goal.updated", nameof(Goal), goal.Id, new { goal.Name }, cancellationToken);
+        await auditLogService.WriteAsync("goal.updated", nameof(Goal), goal.Id, new { goal.Name }, cancellationToken, goal.LinkedAccountId);
 
-        return goal.ToDto();
+        return goal.ToDto(goal.LinkedAccountId is not null ? AccountRole.Owner : AccountRole.Owner, userId);
     }
 
     public async Task<GoalDto> ContributeAsync(Guid id, GoalContributionRequest request, CancellationToken cancellationToken = default)
@@ -130,15 +143,19 @@ public sealed class GoalService(
             throw new AppException(HttpStatusCode.BadRequest, "Invalid contribution", "Contribution amount must be greater than zero.");
         }
 
-        var goal = await dbContext.Goals.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken)
+        var goal = await dbContext.Goals
+            .Include(x => x.LinkedAccount)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
             ?? throw new AppException(HttpStatusCode.NotFound, "Goal not found", "Goal does not exist.");
 
+        await EnsureManageGoalAsync(goal, cancellationToken);
         await using var dbTransaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var accountId = request.AccountId ?? goal.LinkedAccountId;
+        Account? account = null;
         if (accountId is not null)
         {
-            var account = await EnsureAccountOwnershipAsync(accountId.Value, userId, cancellationToken);
+            account = await EnsureOwnedAccountAsync(accountId.Value, cancellationToken);
             if (account.CurrentBalance < request.Amount)
             {
                 throw new AppException(HttpStatusCode.BadRequest, "Insufficient balance", "Contribution exceeds available account balance.");
@@ -157,6 +174,7 @@ public sealed class GoalService(
                 Note = $"Goal contribution: {goal.Name}",
                 PaymentMethod = "goal-transfer"
             });
+            snapshotService.QueueSnapshot(account);
         }
 
         goal.CurrentAmount += request.Amount;
@@ -167,9 +185,9 @@ public sealed class GoalService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
-        await auditLogService.WriteAsync("goal.contributed", nameof(Goal), goal.Id, new { request.Amount }, cancellationToken);
+        await auditLogService.WriteAsync("goal.contributed", nameof(Goal), goal.Id, new { request.Amount }, cancellationToken, goal.LinkedAccountId);
 
-        return goal.ToDto();
+        return goal.ToDto(goal.LinkedAccountId is not null ? AccountRole.Owner : AccountRole.Owner, userId);
     }
 
     public async Task<GoalDto> WithdrawAsync(Guid id, GoalContributionRequest request, CancellationToken cancellationToken = default)
@@ -180,9 +198,12 @@ public sealed class GoalService(
             throw new AppException(HttpStatusCode.BadRequest, "Invalid withdrawal", "Withdrawal amount must be greater than zero.");
         }
 
-        var goal = await dbContext.Goals.FirstOrDefaultAsync(x => x.Id == id && x.UserId == userId, cancellationToken)
+        var goal = await dbContext.Goals
+            .Include(x => x.LinkedAccount)
+            .FirstOrDefaultAsync(x => x.Id == id, cancellationToken)
             ?? throw new AppException(HttpStatusCode.NotFound, "Goal not found", "Goal does not exist.");
 
+        await EnsureManageGoalAsync(goal, cancellationToken);
         if (goal.CurrentAmount < request.Amount)
         {
             throw new AppException(HttpStatusCode.BadRequest, "Invalid withdrawal", "Withdrawal exceeds current goal balance.");
@@ -191,9 +212,10 @@ public sealed class GoalService(
         await using var dbTransaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         var accountId = request.AccountId ?? goal.LinkedAccountId;
+        Account? account = null;
         if (accountId is not null)
         {
-            var account = await EnsureAccountOwnershipAsync(accountId.Value, userId, cancellationToken);
+            account = await EnsureOwnedAccountAsync(accountId.Value, cancellationToken);
             account.CurrentBalance += request.Amount;
             account.LastUpdatedAtUtc = DateTime.UtcNow;
             dbContext.Transactions.Add(new Transaction
@@ -207,6 +229,7 @@ public sealed class GoalService(
                 Note = $"Goal withdrawal: {goal.Name}",
                 PaymentMethod = "goal-transfer"
             });
+            snapshotService.QueueSnapshot(account);
         }
 
         goal.CurrentAmount -= request.Amount;
@@ -217,9 +240,9 @@ public sealed class GoalService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await dbTransaction.CommitAsync(cancellationToken);
-        await auditLogService.WriteAsync("goal.withdrawn", nameof(Goal), goal.Id, new { request.Amount }, cancellationToken);
+        await auditLogService.WriteAsync("goal.withdrawn", nameof(Goal), goal.Id, new { request.Amount }, cancellationToken, goal.LinkedAccountId);
 
-        return goal.ToDto();
+        return goal.ToDto(goal.LinkedAccountId is not null ? AccountRole.Owner : AccountRole.Owner, userId);
     }
 
     private static void ValidateGoalRequest(SaveGoalRequest request)
@@ -235,10 +258,26 @@ public sealed class GoalService(
         }
     }
 
-    private async Task<Account> EnsureAccountOwnershipAsync(Guid accountId, Guid userId, CancellationToken cancellationToken)
+    private async Task<Account> EnsureOwnedAccountAsync(Guid accountId, CancellationToken cancellationToken)
     {
-        return await dbContext.Accounts.FirstOrDefaultAsync(x => x.Id == accountId && x.UserId == userId, cancellationToken)
+        await accountAccessService.EnsureAccessAsync(accountId, AccountRole.Owner, cancellationToken);
+        return await dbContext.Accounts.FirstOrDefaultAsync(x => x.Id == accountId, cancellationToken)
             ?? throw new AppException(HttpStatusCode.NotFound, "Account not found", "Linked account does not exist.");
+    }
+
+    private async Task EnsureManageGoalAsync(Goal goal, CancellationToken cancellationToken)
+    {
+        if (goal.LinkedAccountId is null)
+        {
+            if (goal.UserId != GetRequiredUserId())
+            {
+                throw new AppException(HttpStatusCode.NotFound, "Goal not found", "Goal does not exist.");
+            }
+
+            return;
+        }
+
+        await accountAccessService.EnsureAccessAsync(goal.LinkedAccountId.Value, AccountRole.Owner, cancellationToken);
     }
 }
 
@@ -270,11 +309,13 @@ public sealed class GoalsController(IGoalService goalService) : ControllerBase
 
 internal static class GoalMappings
 {
-    public static GoalDto ToDto(this Goal goal)
+    public static GoalDto ToDto(this Goal goal, AccountRole linkedAccountRole, Guid currentUserId)
     {
         var progress = goal.TargetAmount <= 0
             ? 0
             : (int)Math.Round((goal.CurrentAmount / goal.TargetAmount) * 100, MidpointRounding.AwayFromZero);
+        var isShared = goal.LinkedAccountId is not null && linkedAccountRole != AccountRole.Owner;
+        var canManage = goal.LinkedAccountId is null ? goal.UserId == currentUserId : linkedAccountRole == AccountRole.Owner;
 
         return new GoalDto(
             goal.Id,
@@ -283,9 +324,12 @@ internal static class GoalMappings
             goal.CurrentAmount,
             goal.TargetDate,
             goal.LinkedAccountId,
+            goal.LinkedAccount?.Name,
             goal.Icon,
             goal.Color,
             goal.Status,
-            progress);
+            progress,
+            isShared,
+            canManage);
     }
 }

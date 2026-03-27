@@ -10,7 +10,10 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { RecurringPage } from "./pages/RecurringPage";
 import { AccountsPage } from "./pages/AccountsPage";
 import { CategoriesPage } from "./pages/CategoriesPage";
+import { InsightsPage } from "./pages/InsightsPage";
+import { RulesPage } from "./pages/RulesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { SharedAccountsPage } from "./pages/SharedAccountsPage";
 import { OnboardingPage } from "./pages/OnboardingPage";
 
 function ProtectedAppLayout() {
@@ -67,8 +70,11 @@ export default function App() {
         <Route path="/budgets" element={<BudgetsPage />} />
         <Route path="/goals" element={<GoalsPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/insights" element={<InsightsPage />} />
+        <Route path="/rules" element={<RulesPage />} />
         <Route path="/recurring" element={<RecurringPage />} />
         <Route path="/accounts" element={<AccountsPage />} />
+        <Route path="/shared-accounts" element={<SharedAccountsPage />} />
         <Route path="/categories" element={<CategoriesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>

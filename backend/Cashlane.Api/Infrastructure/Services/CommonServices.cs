@@ -9,7 +9,7 @@ namespace Cashlane.Api.Infrastructure.Services;
 
 public interface IAuditLogService
 {
-    Task WriteAsync(string action, string entityName, Guid? entityId, object metadata, CancellationToken cancellationToken = default);
+    Task WriteAsync(string action, string entityName, Guid? entityId, object metadata, CancellationToken cancellationToken = default, Guid? accountId = null);
 }
 
 public interface ITelemetryService
@@ -32,11 +32,12 @@ public abstract class UserScopedService(ICurrentUserService currentUserService)
 
 public sealed class AuditLogService(AppDbContext dbContext, ICurrentUserService currentUserService) : IAuditLogService
 {
-    public async Task WriteAsync(string action, string entityName, Guid? entityId, object metadata, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(string action, string entityName, Guid? entityId, object metadata, CancellationToken cancellationToken = default, Guid? accountId = null)
     {
         dbContext.AuditLogs.Add(new AuditLog
         {
             UserId = currentUserService.UserId,
+            AccountId = accountId,
             Action = action,
             EntityName = entityName,
             EntityId = entityId,

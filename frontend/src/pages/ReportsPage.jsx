@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../lib/auth";
 import { downloadCsv } from "../lib/api";
 import { useToasts } from "../lib/toasts";
-import { BarsChart, TrendChart, formatCurrency } from "../components/charts";
+import { BarsChart, SingleLineChart, TrendChart, formatCurrency } from "../components/charts";
 import { SelectField } from "../components/SelectField";
 import { REPORT_TRANSACTION_TYPE_OPTIONS } from "../lib/select-options";
 
@@ -10,8 +10,9 @@ export function ReportsPage() {
   const { authorizedFetch } = useAuth();
   const { pushToast } = useToasts();
   const [categorySpend, setCategorySpend] = useState([]);
-  const [incomeVsExpense, setIncomeVsExpense] = useState([]);
-  const [balances, setBalances] = useState([]);
+  const [trends, setTrends] = useState(null);
+  const [netWorth, setNetWorth] = useState([]);
+  const [insights, setInsights] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [filters, setFilters] = useState({
@@ -21,32 +22,37 @@ export function ReportsPage() {
     categoryId: "",
     type: ""
   });
-  const accountOptions = [{ value: "", label: "All accounts" }, ...accounts.map((account) => ({ value: account.id, label: account.name }))];
-  const categoryOptions = [{ value: "", label: "All categories" }, ...categories.map((category) => ({ value: category.id, label: category.name }))];
   const pushToastRef = useRef(pushToast);
 
   useEffect(() => {
     pushToastRef.current = pushToast;
   }, [pushToast]);
 
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === filters.accountId) || null,
+    [accounts, filters.accountId]
+  );
+
   useEffect(() => {
     let isActive = true;
 
     Promise.all([
       authorizedFetch("/reports/category-spend", { params: filters }),
-      authorizedFetch("/reports/income-vs-expense", { params: filters }),
-      authorizedFetch("/reports/account-balance-trend", { params: filters }),
+      authorizedFetch("/reports/trends", { params: filters }),
+      authorizedFetch("/reports/net-worth", { params: filters }),
+      authorizedFetch("/insights"),
       authorizedFetch("/accounts"),
-      authorizedFetch("/categories")
+      authorizedFetch("/categories", { params: { accountId: selectedAccount?.isShared ? selectedAccount.id : "" } })
     ])
-      .then(([categoryData, trendData, balanceData, accountData, categoryList]) => {
+      .then(([categoryData, trendsData, netWorthData, insightData, accountData, categoryList]) => {
         if (!isActive) {
           return;
         }
 
         setCategorySpend(categoryData.items);
-        setIncomeVsExpense(trendData.items);
-        setBalances(balanceData.items);
+        setTrends(trendsData);
+        setNetWorth(netWorthData.items);
+        setInsights(insightData);
         setAccounts(accountData);
         setCategories(categoryList.filter((item) => !item.isArchived));
       })
@@ -61,7 +67,10 @@ export function ReportsPage() {
     return () => {
       isActive = false;
     };
-  }, [authorizedFetch, filters]);
+  }, [authorizedFetch, filters, selectedAccount?.id, selectedAccount?.isShared]);
+
+  const accountOptions = [{ value: "", label: "All accounts" }, ...accounts.map((account) => ({ value: account.id, label: account.name }))];
+  const categoryOptions = [{ value: "", label: "All categories" }, ...categories.map((category) => ({ value: category.id, label: category.name }))];
 
   function exportCsv() {
     downloadCsv("cashlane-category-spend.csv", [
@@ -86,24 +95,9 @@ export function ReportsPage() {
         <div className="filters-grid">
           <input type="date" value={filters.dateFrom} onChange={(event) => setFilters((current) => ({ ...current, dateFrom: event.target.value }))} />
           <input type="date" value={filters.dateTo} onChange={(event) => setFilters((current) => ({ ...current, dateTo: event.target.value }))} />
-          <SelectField
-            ariaLabel="Report account filter"
-            options={accountOptions}
-            value={filters.accountId}
-            onChange={(nextValue) => setFilters((current) => ({ ...current, accountId: nextValue }))}
-          />
-          <SelectField
-            ariaLabel="Report category filter"
-            options={categoryOptions}
-            value={filters.categoryId}
-            onChange={(nextValue) => setFilters((current) => ({ ...current, categoryId: nextValue }))}
-          />
-          <SelectField
-            ariaLabel="Report type filter"
-            options={REPORT_TRANSACTION_TYPE_OPTIONS}
-            value={filters.type}
-            onChange={(nextValue) => setFilters((current) => ({ ...current, type: nextValue }))}
-          />
+          <SelectField ariaLabel="Report account filter" options={accountOptions} value={filters.accountId} onChange={(nextValue) => setFilters((current) => ({ ...current, accountId: nextValue, categoryId: "" }))} />
+          <SelectField ariaLabel="Report category filter" options={categoryOptions} value={filters.categoryId} onChange={(nextValue) => setFilters((current) => ({ ...current, categoryId: nextValue }))} />
+          <SelectField ariaLabel="Report type filter" options={REPORT_TRANSACTION_TYPE_OPTIONS} value={filters.type} onChange={(nextValue) => setFilters((current) => ({ ...current, type: nextValue }))} />
         </div>
         <BarsChart items={categorySpend.map((item) => ({ ...item, color: "var(--accent-strong)" }))} />
       </section>
@@ -115,55 +109,94 @@ export function ReportsPage() {
             <h2>Income vs expense</h2>
           </div>
         </header>
-        {incomeVsExpense.length > 0 ? (
-          <>
-            <TrendChart points={incomeVsExpense} />
-            <div className="list-stack report-summary-list">
-              {incomeVsExpense.map((item) => (
-                <div key={item.label} className="list-row">
-                  <div className="report-copy">
-                    <strong>{item.label}</strong>
-                    <span>Monthly totals</span>
-                  </div>
-                  <div className="report-trend-values">
-                    <span>
-                      Income <strong>{formatCurrency(item.income)}</strong>
-                    </span>
-                    <span>
-                      Expense <strong>{formatCurrency(item.expense)}</strong>
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
+        {trends?.incomeVsExpenseTrend?.length > 0 ? (
+          <TrendChart points={trends.incomeVsExpenseTrend} />
         ) : (
-          <p className="panel-empty">No income or expense data for the selected filters.</p>
+          <p className="panel-empty">No trend data for the selected filters.</p>
+        )}
+      </section>
+
+      <section className="panel panel-wide">
+        <header className="panel-header">
+          <div>
+            <span className="eyebrow">Net worth</span>
+            <h2>Snapshot-based balance history</h2>
+          </div>
+        </header>
+        {netWorth.length > 0 ? (
+          <SingleLineChart
+            ariaLabel="Net worth history"
+            color="var(--info)"
+            points={netWorth.map((item) => ({ label: item.label, value: item.netWorth }))}
+          />
+        ) : (
+          <p className="panel-empty">Net-worth history appears after balance snapshots are collected.</p>
         )}
       </section>
 
       <section className="panel">
         <header className="panel-header">
           <div>
-            <span className="eyebrow">Balances</span>
-            <h2>Account balances</h2>
+            <span className="eyebrow">Savings rate</span>
+            <h2>Monthly efficiency</h2>
           </div>
         </header>
-        {balances.length > 0 ? (
-          <div className="list-stack">
-            {balances.map((item) => (
-              <div key={item.accountId} className="list-row">
-                <div className="report-copy">
-                  <strong>{item.accountName}</strong>
-                  <span>Current balance</span>
-                </div>
-                <strong>{formatCurrency(item.currentBalance)}</strong>
-              </div>
-            ))}
+        <div className="list-stack">
+          {(trends?.savingsRateTrend || []).map((item) => (
+            <div key={item.label} className="list-row">
+              <span>{item.label}</span>
+              <strong>{item.savingsRate.toFixed(1)}%</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <header className="panel-header">
+          <div>
+            <span className="eyebrow">Category trends</span>
+            <h2>Top spending categories over time</h2>
           </div>
-        ) : (
-          <p className="panel-empty">No account balances are available for the selected filters.</p>
-        )}
+        </header>
+        <div className="list-stack">
+          {(trends?.categoryTrends || []).map((item) => (
+            <article key={item.categoryId} className="detail-card">
+              <div className="metric-row">
+                <strong>{item.categoryName}</strong>
+                <span className="legend-dot" style={{ background: item.color }} />
+              </div>
+              <div className="mini-grid">
+                {item.points.map((point) => (
+                  <div key={`${item.categoryId}-${point.label}`} className="mini-grid-item">
+                    <span>{point.label}</span>
+                    <strong>{formatCurrency(point.amount)}</strong>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <header className="panel-header">
+          <div>
+            <span className="eyebrow">Insights</span>
+            <h2>Narrative findings</h2>
+          </div>
+        </header>
+        <div className="list-stack">
+          {insights.length === 0 ? (
+            <p className="panel-empty">Insights will appear when trends emerge across months.</p>
+          ) : (
+            insights.map((item) => (
+              <div key={item.title} className={`alert-card alert-${item.kind}`}>
+                <strong>{item.title}</strong>
+                <p>{item.body}</p>
+              </div>
+            ))
+          )}
+        </div>
       </section>
     </div>
   );

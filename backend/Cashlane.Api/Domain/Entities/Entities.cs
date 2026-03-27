@@ -13,6 +13,8 @@ public sealed class User : EntityBase
     public ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = new List<PasswordResetToken>();
     public ICollection<Account> Accounts { get; set; } = new List<Account>();
     public ICollection<Category> Categories { get; set; } = new List<Category>();
+    public ICollection<AccountMember> AccountMemberships { get; set; } = new List<AccountMember>();
+    public ICollection<Rule> Rules { get; set; } = new List<Rule>();
 }
 
 public sealed class RefreshToken : EntityBase
@@ -50,12 +52,20 @@ public sealed class Account : EntityBase
     public DateTime LastUpdatedAtUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<Transaction> Transactions { get; set; } = new List<Transaction>();
+    public ICollection<RecurringTransaction> RecurringTransactions { get; set; } = new List<RecurringTransaction>();
+    public ICollection<AccountMember> Members { get; set; } = new List<AccountMember>();
+    public ICollection<AccountBalanceSnapshot> BalanceSnapshots { get; set; } = new List<AccountBalanceSnapshot>();
+    public ICollection<Category> Categories { get; set; } = new List<Category>();
+    public ICollection<Budget> Budgets { get; set; } = new List<Budget>();
+    public ICollection<Rule> Rules { get; set; } = new List<Rule>();
 }
 
 public sealed class Category : EntityBase
 {
     public Guid UserId { get; set; }
+    public Guid? AccountId { get; set; }
     public User User { get; set; } = null!;
+    public Account? Account { get; set; }
     public string Name { get; set; } = string.Empty;
     public CategoryType Type { get; set; }
     public string Color { get; set; } = "#1F9D74";
@@ -87,8 +97,10 @@ public sealed class Budget : EntityBase
 {
     public Guid UserId { get; set; }
     public Guid CategoryId { get; set; }
+    public Guid? AccountId { get; set; }
     public User User { get; set; } = null!;
     public Category Category { get; set; } = null!;
+    public Account? Account { get; set; }
     public int Month { get; set; }
     public int Year { get; set; }
     public decimal Amount { get; set; }
@@ -134,8 +146,38 @@ public sealed class RecurringTransaction : EntityBase
 public sealed class AuditLog : EntityBase
 {
     public Guid? UserId { get; set; }
+    public Guid? AccountId { get; set; }
     public string Action { get; set; } = string.Empty;
     public string EntityName { get; set; } = string.Empty;
     public Guid? EntityId { get; set; }
     public string MetadataJson { get; set; } = "{}";
+}
+
+public sealed class Rule : EntityBase
+{
+    public Guid UserId { get; set; }
+    public Guid? AccountId { get; set; }
+    public User User { get; set; } = null!;
+    public Account? Account { get; set; }
+    public string ConditionJson { get; set; } = "{}";
+    public string ActionJson { get; set; } = "{}";
+    public bool IsActive { get; set; } = true;
+    public int Priority { get; set; } = 100;
+}
+
+public sealed class AccountMember : EntityBase
+{
+    public Guid AccountId { get; set; }
+    public Guid UserId { get; set; }
+    public Account Account { get; set; } = null!;
+    public User User { get; set; } = null!;
+    public AccountRole Role { get; set; } = AccountRole.Viewer;
+}
+
+public sealed class AccountBalanceSnapshot : EntityBase
+{
+    public Guid AccountId { get; set; }
+    public Account Account { get; set; } = null!;
+    public decimal Balance { get; set; }
+    public DateTime CapturedAtUtc { get; set; } = DateTime.UtcNow;
 }

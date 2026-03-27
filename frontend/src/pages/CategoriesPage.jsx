@@ -16,16 +16,31 @@ const emptyForm = {
 export function CategoriesPage() {
   const { authorizedFetch } = useAuth();
   const { pushToast } = useToasts();
+  const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [scope, setScope] = useState("");
   const [form, setForm] = useState(emptyForm);
 
+  const manageableAccounts = useMemo(
+    () => accounts.filter((account) => account.isShared && account.role === "Owner"),
+    [accounts]
+  );
+
   useEffect(() => {
-    authorizedFetch("/categories")
-      .then(setCategories)
+    authorizedFetch("/accounts")
+      .then(setAccounts)
       .catch((error) => {
         pushToast({ kind: "danger", title: "Categories unavailable", message: error.message });
       });
   }, [authorizedFetch, pushToast]);
+
+  useEffect(() => {
+    authorizedFetch("/categories", { params: { accountId: scope || "" } })
+      .then(setCategories)
+      .catch((error) => {
+        pushToast({ kind: "danger", title: "Categories unavailable", message: error.message });
+      });
+  }, [authorizedFetch, pushToast, scope]);
 
   const grouped = useMemo(
     () => ({
@@ -35,7 +50,13 @@ export function CategoriesPage() {
     [categories]
   );
 
+  const scopeOptions = [
+    { value: "", label: "Personal categories" },
+    ...manageableAccounts.map((account) => ({ value: account.id, label: `${account.name} categories` }))
+  ];
+
   function startEdit(category) {
+    setScope(category.accountId || "");
     setForm({
       id: category.id,
       name: category.name,
@@ -55,7 +76,8 @@ export function CategoriesPage() {
         type: form.type,
         color: form.color,
         icon: form.icon,
-        isArchived: form.isArchived
+        isArchived: form.isArchived,
+        accountId: scope || null
       };
 
       const saved = form.id
@@ -79,13 +101,10 @@ export function CategoriesPage() {
   async function archiveCategory(category) {
     try {
       await authorizedFetch(`/categories/${category.id}`, { method: "DELETE" });
-      setCategories((current) =>
-        current.map((item) => (item.id === category.id ? { ...item, isArchived: true } : item))
-      );
+      setCategories((current) => current.map((item) => (item.id === category.id ? { ...item, isArchived: true } : item)));
       if (form.id === category.id) {
         setForm(emptyForm);
       }
-
       pushToast({ kind: "success", title: "Category archived", message: `${category.name} has been archived.` });
     } catch (error) {
       pushToast({ kind: "danger", title: "Archive failed", message: error.message });
@@ -99,7 +118,6 @@ export function CategoriesPage() {
       if (form.id === category.id) {
         setForm(emptyForm);
       }
-
       pushToast({ kind: "success", title: "Category deleted", message: `${category.name} was removed.` });
     } catch (error) {
       pushToast({ kind: "danger", title: "Delete failed", message: error.message });
@@ -115,6 +133,9 @@ export function CategoriesPage() {
             <h2>Income and expense classification</h2>
           </div>
         </header>
+        <div className="filters-grid">
+          <SelectField ariaLabel="Category scope" options={scopeOptions} value={scope} onChange={(nextValue) => { setScope(nextValue); setForm(emptyForm); }} />
+        </div>
         <div className="category-columns">
           {Object.entries(grouped).map(([label, items]) => (
             <div key={label} className="category-column">
@@ -126,6 +147,7 @@ export function CategoriesPage() {
                       <span className="category-swatch" style={{ background: category.color }} />
                       <div className="category-copy">
                         <strong>{category.name}</strong>
+                        <span>{category.isShared ? "Shared scope" : "Personal scope"}</span>
                         {category.isArchived && <span>Archived</span>}
                       </div>
                     </div>
@@ -165,12 +187,7 @@ export function CategoriesPage() {
           </label>
           <label className="field">
             <span>Type</span>
-            <SelectField
-              ariaLabel="Category type"
-              options={CATEGORY_TYPE_OPTIONS}
-              value={form.type}
-              onChange={(nextValue) => setForm((current) => ({ ...current, type: nextValue }))}
-            />
+            <SelectField ariaLabel="Category type" options={CATEGORY_TYPE_OPTIONS} value={form.type} onChange={(nextValue) => setForm((current) => ({ ...current, type: nextValue }))} />
           </label>
           <label className="field">
             <span>Color</span>
@@ -181,11 +198,7 @@ export function CategoriesPage() {
             <input value={form.icon} onChange={(event) => setForm((current) => ({ ...current, icon: event.target.value }))} />
           </label>
           <label className="field checkbox-field">
-            <input
-              type="checkbox"
-              checked={form.isArchived}
-              onChange={(event) => setForm((current) => ({ ...current, isArchived: event.target.checked }))}
-            />
+            <input type="checkbox" checked={form.isArchived} onChange={(event) => setForm((current) => ({ ...current, isArchived: event.target.checked }))} />
             <span>Archived</span>
           </label>
           <div className="inline-actions">

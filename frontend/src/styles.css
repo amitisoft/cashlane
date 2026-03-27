@@ -737,6 +737,11 @@ textarea:focus {
   margin: 0.4rem 0 0;
 }
 
+.alert-card p {
+  margin: 0.4rem 0 0;
+  color: var(--ink-soft);
+}
+
 .table-shell {
   display: grid;
   overflow-x: auto;
@@ -795,6 +800,10 @@ textarea:focus {
   color: var(--ink-soft);
 }
 
+.detail-card small {
+  color: var(--ink-soft);
+}
+
 .session-status {
   color: var(--ink-soft);
   text-align: right;
@@ -849,6 +858,103 @@ textarea:focus {
 .panel-empty {
   margin: 0;
   color: var(--ink-soft);
+}
+
+.score-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.score-card {
+  display: grid;
+  place-items: center;
+  gap: 0.25rem;
+  padding: 1.4rem;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(31, 157, 116, 0.12), rgba(20, 115, 85, 0.08));
+  border: 1px solid rgba(31, 157, 116, 0.18);
+}
+
+.score-card strong,
+.factor-score {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-family: var(--font-mono);
+}
+
+.score-factor-grid,
+.mini-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.score-factor-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.mini-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+}
+
+.mini-grid-item {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.metric-row,
+.dashboard-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.metric-row p {
+  margin: 0.3rem 0 0;
+  color: var(--ink-soft);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(30, 42, 47, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.pill-high {
+  background: rgba(31, 157, 116, 0.12);
+  color: var(--accent-strong);
+}
+
+.pill-medium {
+  background: rgba(45, 111, 163, 0.12);
+  color: var(--info);
+}
+
+.pill-low {
+  background: rgba(212, 138, 31, 0.12);
+  color: var(--warning);
+}
+
+.shared-role-picker {
+  min-width: 10rem;
+}
+
+.top-gap {
+  margin-top: 1rem;
+}
+
+.is-invalid {
+  border-color: rgba(196, 78, 71, 0.28);
+  background: rgba(196, 78, 71, 0.05);
 }
 
 .account-copy {

@@ -35,3 +35,17 @@ public enum RecurringFrequency
     Monthly = 3,
     Yearly = 4
 }
+
+public enum ForecastConfidence
+{
+    Low = 1,
+    Medium = 2,
+    High = 3
+}
+
+public enum AccountRole
+{
+    Viewer = 1,
+    Editor = 2,
+    Owner = 3
+}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SelectField } from "../components/SelectField";
 import { useAuth } from "../lib/auth";
 import { useToasts } from "../lib/toasts";
@@ -21,7 +21,12 @@ export function GoalsPage() {
   const [goals, setGoals] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState(emptyForm);
-  const linkedAccountOptions = [{ value: "", label: "None" }, ...accounts.map((account) => ({ value: account.id, label: account.name }))];
+
+  const manageableAccounts = useMemo(
+    () => accounts.filter((account) => account.role === "Owner"),
+    [accounts]
+  );
+  const linkedAccountOptions = [{ value: "", label: "None" }, ...manageableAccounts.map((account) => ({ value: account.id, label: account.name }))];
 
   useEffect(() => {
     Promise.all([authorizedFetch("/goals"), authorizedFetch("/accounts")])
@@ -52,9 +57,7 @@ export function GoalsPage() {
         ? await authorizedFetch(`/goals/${form.id}`, { method: "PUT", body: payload })
         : await authorizedFetch("/goals", { method: "POST", body: payload });
 
-      setGoals((current) =>
-        form.id ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]
-      );
+      setGoals((current) => (form.id ? current.map((item) => (item.id === saved.id ? saved : item)) : [...current, saved]));
       setForm(emptyForm);
       pushToast({
         kind: "success",
@@ -68,7 +71,9 @@ export function GoalsPage() {
 
   async function handleMove(goal, mode) {
     const amount = window.prompt(`Enter ${mode} amount for ${goal.name}`);
-    if (!amount) return;
+    if (!amount) {
+      return;
+    }
 
     try {
       const updated = await authorizedFetch(`/goals/${goal.id}/${mode}`, {
@@ -77,7 +82,7 @@ export function GoalsPage() {
       });
       setGoals((current) => current.map((item) => (item.id === goal.id ? updated : item)));
       pushToast({
-        kind: updated.status === "Completed" ? "success" : "success",
+        kind: "success",
         title: updated.status === "Completed" ? "Goal reached" : mode === "contribute" ? "Contribution added" : "Withdrawal recorded",
         message: updated.status === "Completed" ? `${goal.name} hit its target.` : `${goal.name} updated.`
       });
@@ -116,6 +121,10 @@ export function GoalsPage() {
               <span>
                 {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
               </span>
+              <div className="inline-actions">
+                {goal.isShared && <span className="pill pill-medium">Shared goal</span>}
+                {!goal.canManage && <span className="pill">View only</span>}
+              </div>
               <div className="progress-rail">
                 <div style={{ width: `${Math.min(goal.progressPercent, 100)}%` }} />
               </div>
@@ -125,13 +134,13 @@ export function GoalsPage() {
                 {goal.status === "Completed" ? " · Completed" : ""}
               </small>
               <div className="inline-actions">
-                <button type="button" className="ghost-button" onClick={() => handleMove(goal, "contribute")}>
+                <button type="button" className="ghost-button" onClick={() => handleMove(goal, "contribute")} disabled={!goal.canManage}>
                   Add
                 </button>
-                <button type="button" className="ghost-button" onClick={() => handleMove(goal, "withdraw")}>
+                <button type="button" className="ghost-button" onClick={() => handleMove(goal, "withdraw")} disabled={!goal.canManage}>
                   Withdraw
                 </button>
-                <button type="button" className="ghost-button" onClick={() => startEdit(goal)}>
+                <button type="button" className="ghost-button" onClick={() => startEdit(goal)} disabled={!goal.canManage}>
                   Edit
                 </button>
               </div>
@@ -162,12 +171,7 @@ export function GoalsPage() {
           </label>
           <label className="field">
             <span>Linked account</span>
-            <SelectField
-              ariaLabel="Linked account"
-              options={linkedAccountOptions}
-              value={form.linkedAccountId}
-              onChange={(nextValue) => setForm((current) => ({ ...current, linkedAccountId: nextValue }))}
-            />
+            <SelectField ariaLabel="Linked account" options={linkedAccountOptions} value={form.linkedAccountId} onChange={(nextValue) => setForm((current) => ({ ...current, linkedAccountId: nextValue }))} />
           </label>
           <label className="field">
             <span>Icon</span>

@@ -37,11 +37,13 @@ public interface IDashboardService
 
 public sealed class DashboardService(
     AppDbContext dbContext,
-    ICurrentUserService currentUserService) : UserScopedService(currentUserService), IDashboardService
+    ICurrentUserService currentUserService,
+    IAccountAccessService accountAccessService) : UserScopedService(currentUserService), IDashboardService
 {
     public async Task<DashboardSummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default)
     {
         var userId = GetRequiredUserId();
+        var accessibleAccountIds = await accountAccessService.GetAccessibleAccountIdsAsync(AccountRole.Viewer, cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var monthStart = new DateOnly(today.Year, today.Month, 1);
         var monthEnd = monthStart.AddMonths(1).AddDays(-1);
@@ -50,7 +52,7 @@ public sealed class DashboardService(
             .AsNoTracking()
             .Include(x => x.Account)
             .Include(x => x.Category)
-            .Where(x => x.UserId == userId && x.TransactionDate >= monthStart && x.TransactionDate <= monthEnd)
+            .Where(x => accessibleAccountIds.Contains(x.AccountId) && x.TransactionDate >= monthStart && x.TransactionDate <= monthEnd)
             .OrderByDescending(x => x.TransactionDate)
             .ThenByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);
@@ -67,7 +69,7 @@ public sealed class DashboardService(
             .ToList();
 
         var goals = await dbContext.Goals
-            .Where(x => x.UserId == userId)
+            .Where(x => x.UserId == userId || (x.LinkedAccountId != null && accessibleAccountIds.Contains(x.LinkedAccountId.Value)))
             .OrderBy(x => x.TargetDate)
             .Select(x => new GoalSummaryDto(
                 x.Id,
@@ -79,7 +81,7 @@ public sealed class DashboardService(
             .ToListAsync(cancellationToken);
 
         var upcomingRecurring = await dbContext.RecurringTransactions
-            .Where(x => x.UserId == userId && !x.IsPaused)
+            .Where(x => x.AccountId != null && accessibleAccountIds.Contains(x.AccountId.Value) && !x.IsPaused)
             .OrderBy(x => x.NextRunDate)
             .Take(5)
             .Select(x => new RecurringPreviewDto(x.Id, x.Title, x.Amount, x.NextRunDate))
@@ -91,7 +93,7 @@ public sealed class DashboardService(
             var month = monthStart.AddMonths(-offset);
             var nextMonth = month.AddMonths(1);
             var monthItems = await dbContext.Transactions
-                .Where(x => x.UserId == userId && x.TransactionDate >= month && x.TransactionDate < nextMonth)
+                .Where(x => accessibleAccountIds.Contains(x.AccountId) && x.TransactionDate >= month && x.TransactionDate < nextMonth)
                 .ToListAsync(cancellationToken);
 
             trends.Add(new TrendPointDto(
@@ -102,7 +104,10 @@ public sealed class DashboardService(
 
         var currentBudgets = await dbContext.Budgets
             .Include(x => x.Category)
-            .Where(x => x.UserId == userId && x.Month == today.Month && x.Year == today.Year)
+            .Where(x =>
+                x.Month == today.Month &&
+                x.Year == today.Year &&
+                ((x.AccountId == null && x.UserId == userId) || (x.AccountId != null && accessibleAccountIds.Contains(x.AccountId.Value))))
             .ToListAsync(cancellationToken);
 
         var alerts = new List<AlertDto>();
@@ -140,7 +145,7 @@ public sealed class DashboardService(
         var previousMonthStart = monthStart.AddMonths(-1);
         var previousMonthEnd = monthStart.AddDays(-1);
         var previousExpense = await dbContext.Transactions
-            .Where(x => x.UserId == userId && x.Type == TransactionType.Expense && x.TransactionDate >= previousMonthStart && x.TransactionDate <= previousMonthEnd)
+            .Where(x => accessibleAccountIds.Contains(x.AccountId) && x.Type == TransactionType.Expense && x.TransactionDate >= previousMonthStart && x.TransactionDate <= previousMonthEnd)
             .SumAsync(x => x.Amount, cancellationToken);
 
         var insights = new List<InsightDto>();

@@ -18,6 +18,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Goal> Goals => Set<Goal>();
     public DbSet<RecurringTransaction> RecurringTransactions => Set<RecurringTransaction>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<Rule> Rules => Set<Rule>();
+    public DbSet<AccountMember> AccountMembers => Set<AccountMember>();
+    public DbSet<AccountBalanceSnapshot> AccountBalanceSnapshots => Set<AccountBalanceSnapshot>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -27,7 +30,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             [typeof(CategoryType)] = new EnumToStringConverter<CategoryType>(),
             [typeof(TransactionType)] = new EnumToStringConverter<TransactionType>(),
             [typeof(GoalStatus)] = new EnumToStringConverter<GoalStatus>(),
-            [typeof(RecurringFrequency)] = new EnumToStringConverter<RecurringFrequency>()
+            [typeof(RecurringFrequency)] = new EnumToStringConverter<RecurringFrequency>(),
+            [typeof(AccountRole)] = new EnumToStringConverter<AccountRole>()
         };
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
@@ -77,6 +81,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             entity.Property(x => x.Name).HasMaxLength(100);
             entity.Property(x => x.Color).HasMaxLength(20);
             entity.Property(x => x.Icon).HasMaxLength(50);
+            entity.HasIndex(x => new { x.UserId, x.AccountId, x.Name, x.Type });
         });
 
         modelBuilder.Entity<Transaction>(entity =>
@@ -91,7 +96,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
 
         modelBuilder.Entity<Budget>(entity =>
         {
-            entity.HasIndex(x => new { x.UserId, x.CategoryId, x.Month, x.Year }).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.CategoryId, x.Month, x.Year })
+                .IsUnique()
+                .HasFilter("\"AccountId\" IS NULL");
+            entity.HasIndex(x => new { x.AccountId, x.CategoryId, x.Month, x.Year })
+                .IsUnique()
+                .HasFilter("\"AccountId\" IS NOT NULL");
         });
 
         modelBuilder.Entity<Goal>(entity =>
@@ -110,6 +120,23 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             entity.Property(x => x.Action).HasMaxLength(120);
             entity.Property(x => x.EntityName).HasMaxLength(120);
+            entity.HasIndex(x => new { x.AccountId, x.CreatedAtUtc });
+        });
+
+        modelBuilder.Entity<Rule>(entity =>
+        {
+            entity.HasIndex(x => new { x.UserId, x.AccountId, x.Priority });
+        });
+
+        modelBuilder.Entity<AccountMember>(entity =>
+        {
+            entity.HasIndex(x => new { x.AccountId, x.UserId }).IsUnique();
+            entity.HasIndex(x => new { x.UserId, x.Role });
+        });
+
+        modelBuilder.Entity<AccountBalanceSnapshot>(entity =>
+        {
+            entity.HasIndex(x => new { x.AccountId, x.CapturedAtUtc });
         });
     }
 

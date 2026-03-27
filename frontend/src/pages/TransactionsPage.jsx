@@ -13,6 +13,9 @@ export function TransactionsPage() {
   const [data, setData] = useState(null);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [importPreview, setImportPreview] = useState(null);
+  const [importContent, setImportContent] = useState("");
+  const [importName, setImportName] = useState("");
 
   const filters = useMemo(
     () => ({
@@ -29,6 +32,12 @@ export function TransactionsPage() {
     }),
     [searchParams]
   );
+
+  const selectedAccount = useMemo(
+    () => accounts.find((account) => account.id === filters.accountId) || null,
+    [accounts, filters.accountId]
+  );
+
   const accountOptions = [{ value: "", label: "All accounts" }, ...accounts.map((account) => ({ value: account.id, label: account.name }))];
   const categoryOptions = [{ value: "", label: "All categories" }, ...categories.map((category) => ({ value: category.id, label: category.name }))];
   const pageSizeOptions = [10, 20, 50].map((size) => ({ value: size, label: `${size} / page` }));
@@ -50,7 +59,7 @@ export function TransactionsPage() {
         }
       }),
       authorizedFetch("/accounts"),
-      authorizedFetch("/categories")
+      authorizedFetch("/categories", { params: { accountId: selectedAccount?.isShared ? selectedAccount.id : "" } })
     ])
       .then(([transactionData, accountData, categoryData]) => {
         setData(transactionData);
@@ -60,7 +69,7 @@ export function TransactionsPage() {
       .catch((error) => {
         pushToast({ kind: "danger", title: "Transactions unavailable", message: error.message });
       });
-  }, [authorizedFetch, filters, pushToast]);
+  }, [authorizedFetch, filters, pushToast, selectedAccount?.id, selectedAccount?.isShared]);
 
   function updateFilter(next) {
     const merged = { ...filters, ...next };
@@ -89,10 +98,91 @@ export function TransactionsPage() {
     }
   }
 
+  async function loadImportFile(event) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const content = await file.text();
+    setImportName(file.name);
+    setImportContent(content);
+    setImportPreview(null);
+  }
+
+  async function previewImport() {
+    try {
+      const preview = await authorizedFetch("/transactions/import/preview", {
+        method: "POST",
+        body: { csvContent: importContent }
+      });
+      setImportPreview(preview);
+      pushToast({ kind: "success", title: "Preview ready", message: "Review the rows before importing." });
+    } catch (error) {
+      pushToast({ kind: "danger", title: "Preview failed", message: error.message });
+    }
+  }
+
+  async function commitImport() {
+    try {
+      await authorizedFetch("/transactions/import/commit", {
+        method: "POST",
+        body: { csvContent: importContent }
+      });
+      setImportPreview(null);
+      setImportContent("");
+      setImportName("");
+      const refreshed = await authorizedFetch("/transactions", { params: { ...filters } });
+      setData(refreshed);
+      pushToast({ kind: "success", title: "Import complete", message: "Transactions imported successfully." });
+    } catch (error) {
+      pushToast({ kind: "danger", title: "Import failed", message: error.message });
+    }
+  }
+
   const pageCount = data ? Math.max(1, Math.ceil(data.totalCount / data.pageSize)) : 1;
 
   return (
     <div className="page-grid">
+      <section className="panel">
+        <header className="panel-header">
+          <div>
+            <span className="eyebrow">Import</span>
+            <h2>Cashlane CSV import</h2>
+          </div>
+        </header>
+        <div className="stacked-form">
+          <input type="file" accept=".csv,text/csv" onChange={loadImportFile} />
+          {importName && <span className="panel-empty">{importName}</span>}
+          <div className="inline-actions">
+            <button type="button" className="ghost-button" onClick={previewImport} disabled={!importContent}>
+              Preview import
+            </button>
+            <button type="button" className="primary-button" onClick={commitImport} disabled={!importPreview?.canCommit}>
+              Commit import
+            </button>
+          </div>
+          {importPreview && (
+            <div className="list-stack">
+              {importPreview.rows.slice(0, 8).map((row) => (
+                <article key={row.rowNumber} className={`detail-card ${row.status === "Valid" ? "" : "is-invalid"}`}>
+                  <div className="metric-row">
+                    <strong>Row {row.rowNumber}</strong>
+                    <span>{row.status}</span>
+                  </div>
+                  <p>
+                    {row.transactionDate} · {row.accountName} · {row.categoryName} · {row.merchant || "No merchant"}
+                  </p>
+                  {row.validationErrors.length > 0 && <p>{row.validationErrors.join(" ")}</p>}
+                  {row.alerts.length > 0 && <p>{row.alerts.join(", ")}</p>}
+                </article>
+              ))}
+              {importPreview.rows.length > 8 && <p className="panel-empty">Showing the first 8 preview rows.</p>}
+            </div>
+          )}
+        </div>
+      </section>
+
       <section className="panel panel-wide transactions-panel">
         <header className="panel-header">
           <div>
@@ -102,29 +192,10 @@ export function TransactionsPage() {
         </header>
 
         <div className="filters-grid">
-          <input
-            placeholder="Search merchant or note"
-            value={filters.search}
-            onChange={(event) => updateFilter({ search: event.target.value, page: 1 })}
-          />
-          <SelectField
-            ariaLabel="Transactions account filter"
-            options={accountOptions}
-            value={filters.accountId}
-            onChange={(nextValue) => updateFilter({ accountId: nextValue, page: 1 })}
-          />
-          <SelectField
-            ariaLabel="Transactions category filter"
-            options={categoryOptions}
-            value={filters.categoryId}
-            onChange={(nextValue) => updateFilter({ categoryId: nextValue, page: 1 })}
-          />
-          <SelectField
-            ariaLabel="Transactions type filter"
-            options={REPORT_TRANSACTION_TYPE_OPTIONS}
-            value={filters.type}
-            onChange={(nextValue) => updateFilter({ type: nextValue, page: 1 })}
-          />
+          <input placeholder="Search merchant or note" value={filters.search} onChange={(event) => updateFilter({ search: event.target.value, page: 1 })} />
+          <SelectField ariaLabel="Transactions account filter" options={accountOptions} value={filters.accountId} onChange={(nextValue) => updateFilter({ accountId: nextValue, categoryId: "", page: 1 })} />
+          <SelectField ariaLabel="Transactions category filter" options={categoryOptions} value={filters.categoryId} onChange={(nextValue) => updateFilter({ categoryId: nextValue, page: 1 })} />
+          <SelectField ariaLabel="Transactions type filter" options={REPORT_TRANSACTION_TYPE_OPTIONS} value={filters.type} onChange={(nextValue) => updateFilter({ type: nextValue, page: 1 })} />
           <input type="date" value={filters.dateFrom} onChange={(event) => updateFilter({ dateFrom: event.target.value, page: 1 })} />
           <input type="date" value={filters.dateTo} onChange={(event) => updateFilter({ dateTo: event.target.value, page: 1 })} />
           <input type="number" placeholder="Min amount" value={filters.minAmount} onChange={(event) => updateFilter({ minAmount: event.target.value, page: 1 })} />
@@ -163,26 +234,11 @@ export function TransactionsPage() {
             Page {filters.page} of {pageCount}
           </span>
           <div className="inline-actions">
-            <SelectField
-              ariaLabel="Transactions page size"
-              options={pageSizeOptions}
-              value={filters.pageSize}
-              onChange={(nextValue) => updateFilter({ pageSize: nextValue, page: 1 })}
-            />
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => updateFilter({ page: Math.max(filters.page - 1, 1) })}
-              disabled={filters.page <= 1}
-            >
+            <SelectField ariaLabel="Transactions page size" options={pageSizeOptions} value={filters.pageSize} onChange={(nextValue) => updateFilter({ pageSize: nextValue, page: 1 })} />
+            <button type="button" className="ghost-button" onClick={() => updateFilter({ page: Math.max(filters.page - 1, 1) })} disabled={filters.page <= 1}>
               Previous
             </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={() => updateFilter({ page: Math.min(filters.page + 1, pageCount) })}
-              disabled={filters.page >= pageCount}
-            >
+            <button type="button" className="ghost-button" onClick={() => updateFilter({ page: Math.min(filters.page + 1, pageCount) })} disabled={filters.page >= pageCount}>
               Next
             </button>
           </div>

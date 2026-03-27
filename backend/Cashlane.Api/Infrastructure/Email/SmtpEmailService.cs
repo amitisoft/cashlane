@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using Cashlane.Api.Configuration;
+using Cashlane.Api.Domain.Enums;
 using Microsoft.Extensions.Options;
 
 namespace Cashlane.Api.Infrastructure.Email;
@@ -9,6 +10,7 @@ public interface IEmailService
 {
     Task SendPasswordResetAsync(string email, string displayName, string resetUrl, CancellationToken cancellationToken = default);
     Task SendRegistrationVerificationAsync(string email, string displayName, string verificationUrl, CancellationToken cancellationToken = default);
+    Task SendSharedAccountInviteAsync(string email, string displayName, string accountName, AccountRole role, CancellationToken cancellationToken = default);
 }
 
 public sealed class SmtpEmailService(
@@ -19,7 +21,8 @@ public sealed class SmtpEmailService(
 
     public async Task SendPasswordResetAsync(string email, string displayName, string resetUrl, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.Username) ||
+        if (string.IsNullOrWhiteSpace(_options.Host) ||
+            string.IsNullOrWhiteSpace(_options.Username) ||
             string.IsNullOrWhiteSpace(_options.Password) ||
             string.IsNullOrWhiteSpace(_options.FromEmail))
         {
@@ -48,7 +51,8 @@ public sealed class SmtpEmailService(
 
     public async Task SendRegistrationVerificationAsync(string email, string displayName, string verificationUrl, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(_options.Username) ||
+        if (string.IsNullOrWhiteSpace(_options.Host) ||
+            string.IsNullOrWhiteSpace(_options.Username) ||
             string.IsNullOrWhiteSpace(_options.Password) ||
             string.IsNullOrWhiteSpace(_options.FromEmail))
         {
@@ -62,6 +66,37 @@ public sealed class SmtpEmailService(
             Subject = "Verify your Cashlane email",
             Body =
                 $"Hello {displayName},\n\nUse the link below to verify your email and finish creating your Cashlane account:\n{verificationUrl}\n\nIf you did not request this, you can ignore this message.",
+            IsBodyHtml = false
+        };
+        message.To.Add(email);
+
+        using var client = new SmtpClient(_options.Host, _options.Port)
+        {
+            EnableSsl = _options.UseSsl,
+            Credentials = new NetworkCredential(_options.Username, _options.Password)
+        };
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await client.SendMailAsync(message, cancellationToken);
+    }
+
+    public async Task SendSharedAccountInviteAsync(string email, string displayName, string accountName, AccountRole role, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_options.Host) ||
+            string.IsNullOrWhiteSpace(_options.Username) ||
+            string.IsNullOrWhiteSpace(_options.Password) ||
+            string.IsNullOrWhiteSpace(_options.FromEmail))
+        {
+            logger.LogWarning("SMTP is not configured. Shared account invite for {Email} to account {AccountName} with role {Role}", email, accountName, role);
+            return;
+        }
+
+        using var message = new MailMessage
+        {
+            From = new MailAddress(_options.FromEmail, _options.FromName),
+            Subject = "You were added to a shared Cashlane account",
+            Body =
+                $"Hello {displayName},\n\nYou now have {role} access to the shared Cashlane account \"{accountName}\".\n\nOpen Cashlane to review the account and start collaborating.",
             IsBodyHtml = false
         };
         message.To.Add(email);

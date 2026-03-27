@@ -27,7 +27,6 @@ public sealed class SmtpOptions
 {
     public const string SectionName = "Smtp";
 
-    [Required]
     public string Host { get; set; } = string.Empty;
 
     [Range(1, 65535)]

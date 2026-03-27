@@ -30,14 +30,25 @@ function buildUrl(path, params) {
 }
 
 export async function apiFetch(path, { method = "GET", token, body, params, headers } = {}) {
+  const isRawBody =
+    body instanceof FormData ||
+    typeof body === "string" ||
+    body instanceof Blob ||
+    body instanceof ArrayBuffer;
+
   const response = await fetch(buildUrl(path, params), {
     method,
     headers: {
-      "Content-Type": "application/json",
+      ...(body !== undefined && body !== null && !isRawBody ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers || {})
     },
-    body: body ? JSON.stringify(body) : undefined
+    body:
+      body === undefined || body === null
+        ? undefined
+        : isRawBody
+          ? body
+          : JSON.stringify(body)
   });
 
   if (response.status === 204) {

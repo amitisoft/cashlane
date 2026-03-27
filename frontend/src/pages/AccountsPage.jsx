@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { SelectField } from "../components/SelectField";
 import { useAuth } from "../lib/auth";
 import { ACCOUNT_TYPE_OPTIONS } from "../lib/select-options";
@@ -22,6 +23,7 @@ const accountTypeLabels = {
 export function AccountsPage() {
   const { authorizedFetch } = useAuth();
   const { pushToast } = useToasts();
+  const navigate = useNavigate();
   const [accounts, setAccounts] = useState([]);
   const [form, setForm] = useState(emptyForm);
 
@@ -32,6 +34,15 @@ export function AccountsPage() {
         pushToast({ kind: "danger", title: "Accounts unavailable", message: error.message });
       });
   }, [authorizedFetch, pushToast]);
+
+  const sharedSummary = useMemo(() => {
+    const ownedShared = accounts.filter((account) => account.isShared && account.role === "Owner");
+    const memberShared = accounts.filter((account) => account.isShared && account.role !== "Owner");
+    return {
+      ownedSharedCount: ownedShared.length,
+      memberSharedCount: memberShared.length
+    };
+  }, [accounts]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -54,25 +65,45 @@ export function AccountsPage() {
 
   return (
     <div className="page-grid">
-      <section className="panel">
+      <section className="panel panel-wide">
         <header className="panel-header">
           <div>
             <span className="eyebrow">Accounts</span>
             <h2>Cash, cards, and bank balances</h2>
           </div>
         </header>
+        <div className="score-strip">
+          <article className="detail-card">
+            <strong>{sharedSummary.ownedSharedCount}</strong>
+            <p>Shared accounts you manage</p>
+          </article>
+          <article className="detail-card">
+            <strong>{sharedSummary.memberSharedCount}</strong>
+            <p>Shared accounts you can access</p>
+          </article>
+          <button type="button" className="ghost-button" onClick={() => navigate("/shared-accounts")}>
+            Open shared account management
+          </button>
+        </div>
         <div className="list-stack">
           {accounts.map((account) => (
-            <div key={account.id} className="list-row">
-              <div className="account-copy">
-                <strong>{account.name}</strong>
-                <span>
-                  {accountTypeLabels[account.type] || account.type}
-                  {account.institutionName ? ` - ${account.institutionName}` : ""}
-                </span>
+            <article key={account.id} className="detail-card">
+              <div className="metric-row">
+                <div className="account-copy">
+                  <strong>{account.name}</strong>
+                  <span>
+                    {accountTypeLabels[account.type] || account.type}
+                    {account.institutionName ? ` · ${account.institutionName}` : ""}
+                  </span>
+                </div>
+                <strong>{formatCurrency(account.currentBalance)}</strong>
               </div>
-              <strong>{formatCurrency(account.currentBalance)}</strong>
-            </div>
+              <div className="inline-actions">
+                <span className="pill pill-high">{account.role}</span>
+                {account.isShared && <span className="pill pill-medium">{account.memberCount} members</span>}
+                <span className="pill">{account.ownerName}</span>
+              </div>
+            </article>
           ))}
         </div>
       </section>
@@ -91,27 +122,15 @@ export function AccountsPage() {
           </label>
           <label className="field">
             <span>Type</span>
-            <SelectField
-              ariaLabel="Account type"
-              options={ACCOUNT_TYPE_OPTIONS}
-              value={form.type}
-              onChange={(nextValue) => setForm((current) => ({ ...current, type: nextValue }))}
-            />
+            <SelectField ariaLabel="Account type" options={ACCOUNT_TYPE_OPTIONS} value={form.type} onChange={(nextValue) => setForm((current) => ({ ...current, type: nextValue }))} />
           </label>
           <label className="field">
             <span>Opening balance</span>
-            <input
-              type="number"
-              value={form.openingBalance}
-              onChange={(event) => setForm((current) => ({ ...current, openingBalance: event.target.value }))}
-            />
+            <input type="number" value={form.openingBalance} onChange={(event) => setForm((current) => ({ ...current, openingBalance: event.target.value }))} />
           </label>
           <label className="field">
             <span>Institution</span>
-            <input
-              value={form.institutionName}
-              onChange={(event) => setForm((current) => ({ ...current, institutionName: event.target.value }))}
-            />
+            <input value={form.institutionName} onChange={(event) => setForm((current) => ({ ...current, institutionName: event.target.value }))} />
           </label>
           <button className="primary-button" type="submit">
             Create account
