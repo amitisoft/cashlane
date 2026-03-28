@@ -26,6 +26,7 @@ public sealed class DemoDataSeeder(
 
         var demoEmail = _options.DemoEmail.ToLowerInvariant();
         var user = await dbContext.Users
+            .AsSplitQuery()
             .Include(x => x.Accounts)
             .Include(x => x.Categories)
             .FirstOrDefaultAsync(x => x.Email == demoEmail, cancellationToken);
