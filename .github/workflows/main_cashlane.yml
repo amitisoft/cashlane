@@ -23,17 +23,23 @@ jobs:
         with:
           dotnet-version: '8.x'
 
+      - name: Restore
+        run: dotnet restore Cashlane.Api/Cashlane.Api.csproj
+        working-directory: ./backend
+
       - name: Build with dotnet
-        run: dotnet build --configuration Release
+        run: dotnet build Cashlane.Api/Cashlane.Api.csproj --configuration Release --no-restore
+        working-directory: ./backend
 
       - name: dotnet publish
-        run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp
+        run: dotnet publish Cashlane.Api/Cashlane.Api.csproj -c Release --no-build -o ./publish
+        working-directory: ./backend
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: .net-app
-          path: ${{env.DOTNET_ROOT}}/myapp
+          path: backend/publish
 
   deploy:
     runs-on: ubuntu-latest
@@ -47,6 +53,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: .net-app
+          path: ./publish
       
       - name: Login to Azure
         uses: azure/login@v2
@@ -61,5 +68,5 @@ jobs:
         with:
           app-name: 'cashlane'
           slot-name: 'Production'
-          package: .
+          package: ./publish
           
