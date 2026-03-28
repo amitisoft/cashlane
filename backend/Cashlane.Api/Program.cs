@@ -25,6 +25,7 @@ builder.Services
     });
 
 builder.Services.AddProblemDetails();
+builder.Services.AddHealthChecks();
 builder.Services.AddHttpsRedirection(options =>
 {
     options.HttpsPort = 443;
@@ -111,9 +112,12 @@ app.UseMiddleware<ProblemDetailsMiddleware>();
 if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
-    app.UseHttpsRedirection();
+    app.UseWhen(
+        context => !context.Request.Path.StartsWithSegments("/health"),
+        branch => branch.UseHttpsRedirection());
 }
 
+app.MapHealthChecks("/health");
 app.UseCors("frontend");
 app.UseAuthentication();
 app.UseMiddleware<AccountAccessMiddleware>();
