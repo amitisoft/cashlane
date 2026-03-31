@@ -8,7 +8,7 @@ export default defineConfig({
     port: 8080,
     proxy: {
       "/api": {
-        target: "http://localhost:9090",
+        target: "https://cashlane-fkcnb7fgbjdkaxgx.southindia-01.azurewebsites.net",
         changeOrigin: true
       }
     }

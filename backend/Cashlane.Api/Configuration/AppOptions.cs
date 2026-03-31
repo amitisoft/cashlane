@@ -64,7 +64,7 @@ public sealed class AppUrlOptions
     public const string SectionName = "AppUrls";
 
     [Required]
-    public string FrontendBaseUrl { get; set; } = "http://localhost:8080";
+    public string FrontendBaseUrl { get; set; } = "https://yellow-rock-0a4f2a100.1.azurestaticapps.net";
 
     [Required]
     public string ResetPasswordPath { get; set; } = "/reset-password";
@@ -75,5 +75,5 @@ public sealed class CorsOptions
     public const string SectionName = "Cors";
 
     [MinLength(1)]
-    public string[] AllowedOrigins { get; set; } = ["http://localhost:8080"];
+    public string[] AllowedOrigins { get; set; } = ["https://yellow-rock-0a4f2a100.1.azurestaticapps.net"];
 }
